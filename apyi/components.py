@@ -46,6 +46,7 @@ class Model:
         for endpoint, operations in self.paths.items():
             for method, defin in operations.items():
                 out.append(Operation(self, endpoint, {method: defin}))
+        
         ids = [o.operationId for o in out]
         self._op_lookup = dict(zip(ids, out))
         self._ops = out
@@ -105,6 +106,10 @@ class Operation:
             setattr(self, k, v)
         if hasattr(self, 'parameters'):
             self.parameters = [Parameter(model, p) for p in self.parameters]
+        if not hasattr(self, 'operationId'):
+            dumbname = self.path
+            opname = [i for i in dumbname.split('/') if i not in ['v3', 'sd', 'sp'] and '{' not in i]
+            self.operationId = self.method + "_".join(opname)
     
     def __repr__(self):
         return f'<HTTP {self._model.info["title"]} Operation: {self.operationId}>'
