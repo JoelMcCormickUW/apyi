@@ -1,7 +1,7 @@
 # apyi
 ## Version 1.1.0
 
-Creates model objects from openapi specifications. 
+Creates model objects from openapi specifications that can be used/customized for operation execution. 
 
 ## Installation
 
