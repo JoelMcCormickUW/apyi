@@ -15,6 +15,13 @@ def doc_loader(url, format='json'):
         root.find_children(rows)
         return root.to_json()['root']
 
+def get_model_component(model, path):
+        out = model._components.copy()
+        for p in path.split('/'):
+            if p in ['#', 'components']:
+                continue
+            out = out[p]
+        return out
 
 class Model:
     # create a model object from openapi spec
@@ -29,6 +36,9 @@ class Model:
         else:
             self.tags = []
         self.load_operations()
+        if hasattr(self, 'components'):
+            self._components = self.components
+            self.components = Component(self, 'components', self._components)
         
     def __getattr__(self, __name: str):
         if __name in self._op_lookup:
@@ -51,6 +61,15 @@ class Model:
         self._op_lookup = dict(zip(ids, out))
         self._ops = out
 
+    def get_component(self, ref):
+        found = self.components
+        for p in ref.split('/'):
+            if p in ['#', 'components']:
+                continue
+            found = getattr(found, p)
+        return found
+
+
 class Tag:
     def __init__(self, model, name):
         self.model = model
@@ -69,7 +88,7 @@ class Tag:
 class Parameter:
     def __init__(self, model:Model, defin):
         if '$ref' in defin:
-            defin = self.get_model_component(model, defin['$ref'])
+            defin = get_model_component(model, defin['$ref'])
         
         self._defin = defin.copy()
         self.in_ = self._defin.pop('in') if 'in' in self._defin else None
@@ -86,13 +105,134 @@ class Parameter:
         except AttributeError:
             return f"<Definition - parameter of unknown type>"
     
-    def get_model_component(self, model, path):
-        out = model.components.copy()
-        for p in path.split('/'):
-            if p in ['#', 'components']:
-                continue
-            out = out[p]
+    
+
+class Body:
+    def __init__(self, model:Model, defin):
+        self.description = defin.get('description', '')
+        self.contentType = list(defin['content'].keys())[0]
+        self.required = defin.get('required', 'false') == 'true'
+        self.schema = Component(model, 'schema', defin['content'][self.contentType]['schema'])
+
+    @property
+    def template(self):
+        return self.schema.build_template()
+
+        
+
+class Component:
+    def __init__(self, model:Model, name:str, defin:dict):
+        self._name = name
+        self._model = model
+        try:
+            for k,v in defin.items():
+                if k == 'allOf':
+                    v = self.concat(v)
+                    continue
+                if isinstance(v, dict):
+                    if '$ref' in v:
+                        v = get_model_component(self._model, v['$ref'])
+                    setattr(self, k, Component(self._model, k, v))
+                else:
+                    setattr(self, k, v)
+        except AttributeError:
+            print(defin)
+            raise
+
+    def __getattr__(self, name):
+        if 'items' in self.__dict__:
+            return getattr(self.items, name)
+        elif 'properties' in self.__dict__:
+            return getattr(self.properties, name)
+        else:
+            raise AttributeError
+        
+    
+
+    def build_template(self, explain=False):
+        type_ = self.type if hasattr(self, 'type') else 'object'
+        match type_:
+
+            case 'object':
+                if not hasattr(self, 'properties'):
+                    return {}
+                out = {k:v.build_template(explain=explain) for k,v in self.properties.__dict__.items() if not k.startswith('_')}
+            
+            case 'array':
+                if not hasattr(self, 'items'):
+                    return []
+                out = [self.items.build_template(explain=explain)]
+            
+
+            case 'string' if hasattr(self, 'enum'):
+                out = self.enum[0]
+            
+            case 'string':
+                out = 'placeholder'
+            
+            case 'integer' if hasattr(self, 'default'):
+                out = self.default
+            
+            case 'integer' if hasattr(self, 'minimum'):
+                out = self.minimum
+
+            case 'integer':
+                out = 0
+
+            case 'boolean':
+                out = False
+            
+            case 'float' if hasattr(self, 'default'):
+                out = self.default
+
+            case 'float' if hasattr(self, 'minimum'):
+                out = self.minimum
+                    
+            case 'float':
+                out = 0.0
+
+            case 'number':
+                out = 0
+
+            case _:
+                print(self)
+                raise ValueError(f'Unknown type: {type_}')
+
+        if type_ not in ['object', 'array'] and explain:
+            if hasattr(self, 'description'):
+                out = self.description
+
         return out
+                
+
+    def concat(self, array):
+    
+        for i in array:
+            if '$ref' in i:
+                try:
+                    i = get_model_component(self._model, i['$ref'])
+                except TypeError:
+                    ref, path = i.replace('"', '').split(':')
+                    i = get_model_component(self._model, path.strip())
+            holding = Component(self._model, self._name, i)
+            for k,v in holding.__dict__.items():
+                if k in self.__dict__ and isinstance(self.__dict__[k], dict):
+                    self.__dict__[k].update(v)
+                if k in self.__dict__ and isinstance(self.__dict__[k], Component):
+                    self.__dict__[k].__dict__.update(v.__dict__)
+                
+                elif k not in self.__dict__:
+                    setattr(self, k, v)
+
+ 
+
+    def __repr__(self):
+        if 'description' in self.__dict__:
+            return f"<{self._name}: {self.description}>"
+        else:
+            return f'<{self._name}>'
+
+    
 
 
 class Operation:
@@ -123,7 +263,38 @@ class Operation:
         return [p for p in self.parameters if hasattr(p, 'required') and p.required]
 
     @property
+    def hasPathParams(self):
+        return any(p.in_ == 'path' for p in self.parameters)
+
+    @property
     def about(self):
         if hasattr(self, 'description'):
             return self.description
         return self.summary
+
+
+class ClientModel(Model):
+    def __init__(self, client, url):
+        self.client = client
+        super().__init__(url)
+        self.convert_ops()
+
+    def convert_ops(self):
+        out = [SessionOperation(op) for op in self._ops]
+        ids = [o.operationId for o in out]
+        self._op_lookup = dict(zip(ids, out))
+        self._ops = out
+
+class SessionOperation(Operation):
+    def __init__(self, op):
+        self.__dict__ = op.__dict__
+
+    def build_request(self, **kwargs):
+        pass
+        
+
+
+    
+        
+
+
