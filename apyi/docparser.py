@@ -93,7 +93,7 @@ class Level:
         else:
             leading = " " * (self.level + 1)
             k,v = self.raw.split(':',1)
-            self.raw = k
+            self.raw = 'description: |-'
             self.sub_lines.insert(0, Level(leading + v))
 
 
