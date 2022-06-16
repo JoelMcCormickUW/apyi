@@ -1,5 +1,5 @@
 # apyi
-## Version 1.2.0
+## Version 1.2.1
 
 Creates model objects from openapi specifications that can be used/customized for operation execution. 
 
