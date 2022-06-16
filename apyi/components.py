@@ -28,6 +28,7 @@ class Model:
     def __init__(self, url):
         modelFormat = 'json' if 'json' in url else 'yaml'
         jsonModel = doc_loader(url, format=modelFormat)
+        print('loaded model')
         for k,v in jsonModel.items():
             setattr(self, k, v)
         self.name = self.info.get('title', 'Unknown')
@@ -35,10 +36,10 @@ class Model:
            self.tags = [t['name'] for t in self.tags]
         else:
             self.tags = []
+        self._op_lookup = {}
+        self._components = self.components
+        self.components = Component(self, 'components', self._components)
         self.load_operations()
-        if hasattr(self, 'components'):
-            self._components = self.components
-            self.components = Component(self, 'components', self._components)
         
     def __getattr__(self, __name: str):
         if __name in self._op_lookup:
@@ -46,8 +47,8 @@ class Model:
         elif __name in self.tags:
             return Tag(self, __name)
         else:
-            raise KeyError(f'{__name} not found in {self.name}')
-        
+            raise KeyError(f'{__name} not found in {self.name}')   
+
     def __repr__(self):
         return f'<API Model: {self.name}>'
 
@@ -112,13 +113,14 @@ class Body:
         self.description = defin.get('description', '')
         self.contentType = list(defin['content'].keys())[0]
         self.required = defin.get('required', 'false') == 'true'
+        self._raw = defin.copy()
         self.schema = Component(model, 'schema', defin['content'][self.contentType]['schema'])
 
     @property
     def template(self):
         return self.schema.build_template()
 
-        
+
 
 class Component:
     def __init__(self, model:Model, name:str, defin:dict):
@@ -250,6 +252,9 @@ class Operation:
             dumbname = self.path
             opname = [i for i in dumbname.split('/') if i not in ['v3', 'sd', 'sp'] and '{' not in i]
             self.operationId = self.method + "_".join(opname)
+
+        if hasattr(self, 'requestBody'):
+            self.requestBody = Body(model, self.requestBody)
     
     def __repr__(self):
         return f'<HTTP {self._model.info["title"]} Operation: {self.operationId}>'
@@ -273,25 +278,6 @@ class Operation:
         return self.summary
 
 
-class ClientModel(Model):
-    def __init__(self, client, url):
-        self.client = client
-        super().__init__(url)
-        self.convert_ops()
-
-    def convert_ops(self):
-        out = [SessionOperation(op) for op in self._ops]
-        ids = [o.operationId for o in out]
-        self._op_lookup = dict(zip(ids, out))
-        self._ops = out
-
-class SessionOperation(Operation):
-    def __init__(self, op):
-        self.__dict__ = op.__dict__
-
-    def build_request(self, **kwargs):
-        pass
-        
 
 
     
