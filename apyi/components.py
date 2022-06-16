@@ -126,6 +126,9 @@ class Component:
     def __init__(self, model:Model, name:str, defin:dict):
         self._name = name
         self._model = model
+        if isinstance(defin, str):
+            key, val = defin.replace('"', '').split(':')
+            defin = {key.strip(): val.strip()}
         try:
             for k,v in defin.items():
                 if k == 'allOf':
