@@ -28,7 +28,6 @@ class Model:
     def __init__(self, url):
         modelFormat = 'json' if 'json' in url else 'yaml'
         jsonModel = doc_loader(url, format=modelFormat)
-        print('loaded model')
         for k,v in jsonModel.items():
             setattr(self, k, v)
         self.name = self.info.get('title', 'Unknown')
