@@ -134,10 +134,16 @@ class Component:
                 if k == 'allOf':
                     v = self.concat(v)
                     continue
+                if k == '$ref':
+                    reffed = get_model_component(self._model, v)
+                    temp = Component(self._model, self._name, reffed)
+                    self.combine(temp)
+                    continue
                 if isinstance(v, dict):
                     if '$ref' in v:
                         v = get_model_component(self._model, v['$ref'])
                     setattr(self, k, Component(self._model, k, v))
+                    continue
                 else:
                     setattr(self, k, v)
         except AttributeError:
@@ -220,7 +226,11 @@ class Component:
                     ref, path = i.replace('"', '').split(':')
                     i = get_model_component(self._model, path.strip())
             holding = Component(self._model, self._name, i)
-            for k,v in holding.__dict__.items():
+            self.combine(holding)
+            
+
+    def combine(self, other):
+        for k,v in other.__dict__.items():
                 if k in self.__dict__ and isinstance(self.__dict__[k], dict):
                     self.__dict__[k].update(v)
                 if k in self.__dict__ and isinstance(self.__dict__[k], Component):
