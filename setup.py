@@ -5,7 +5,7 @@ with open('README.md', 'r') as fh:
 
 setup(
     name ='apyi',
-    version = '1.2.3',
+    version = '1.2.4',
     author = 'Joel McCormick',
     author_email = 'joe.lp.mccormick@gmail.com',
     description = 'TODO: write a description',
