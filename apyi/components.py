@@ -33,8 +33,10 @@ class Model:
         self.name = self.info.get('title', 'Unknown')
         if 'tags' in jsonModel:
            self.tags = [t['name'] for t in self.tags]
+           self._tagKeys = [t.title().replace(' ','') for t in self.tags]
         else:
             self.tags = []
+            self._tagKeys = []
         self._op_lookup = {}
         self._components = self.components
         self.components = Component(self, 'components', self._components)
@@ -43,13 +45,16 @@ class Model:
     def __getattr__(self, __name: str):
         if __name in self._op_lookup:
             return self._op_lookup[__name]
-        elif __name in self.tags:
-            return Tag(self, __name)
+        elif __name in self._tagKeys:
+            return Tag(self, self.tags[self._tagKeys.index(__name)])
         else:
             raise KeyError(f'{__name} not found in {self.name}')   
 
     def __repr__(self):
-        return f'<API Model: {self.name}>'
+        out = f'<API Model: {self.name}>'
+        if self._tagKeys:
+            out += '\n\tTags: ' + ', '.join(self._tagKeys)
+        return out        
 
     def load_operations(self):
         out = []
@@ -73,6 +78,7 @@ class Model:
 class Tag:
     def __init__(self, model, name):
         self.model = model
+        self.name = name
         self._ops = [i.operationId for i in model._ops if name in i.tags]
     
     def __getattr__(self, __name):
@@ -81,6 +87,12 @@ class Tag:
     
     def list_ops(self):
         return [getattr(self.model, op) for op in self._ops]
+    
+    def __repr__(self):
+        out = f'<Tag: {self.name} ({len(self.list_ops())} Operations)>' 
+        for op in self.list_ops():
+            out += f'\n\t{op}'
+        return out
 
 
 
@@ -274,7 +286,18 @@ class Operation:
     @property
     def headers(self):
         return [p for p in self.parameters if p.in_ == 'header']
+
+    @property
+    def header_keys(self):
+        return [i.name for i in self.headers]
     
+    @property
+    def maxItems(self):
+        if self.method.lower() in ['post', 'put']:
+            return int(self.requestBody.schema.maxItems)
+        else:
+            return 1000
+
     @property
     def required(self):
         return [p for p in self.parameters if hasattr(p, 'required') and p.required]
@@ -282,6 +305,15 @@ class Operation:
     @property
     def hasPathParams(self):
         return any(p.in_ == 'path' for p in self.parameters)
+    
+    @property
+    def path_keys(self):
+        return [i.name for i in self.parameters if i.in_ == 'path']
+
+    @property
+    def query_params(self):
+        return [i.name for i in self.parameters if i.in_ == 'query']
+
 
     @property
     def about(self):
