@@ -51,6 +51,10 @@ class Model:
             raise KeyError(f'{__name} not found in {self.name}')   
 
     def __repr__(self):
+        return f'<API Model: {self.name}>'
+
+    @property
+    def about(self):
         out = f'<API Model: {self.name}>'
         if self._tagKeys:
             out += '\n\tTags: ' + ', '.join(self._tagKeys)
